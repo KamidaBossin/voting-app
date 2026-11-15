@@ -11,10 +11,9 @@ let express = require("express"),
 
 io.set("transports", ["polling"])
 
-const port = 8888
+const port = process.env.PORT || 8888
 
 io.sockets.on("connection", function (socket) {
-
   socket.emit("message", {text: "Welcome!"})
 
   socket.on("subscribe", function (data) {
@@ -22,8 +21,18 @@ io.sockets.on("connection", function (socket) {
   })
 })
 
+const pgHost = process.env.POSTGRES_HOST || "db"
+const pgPort = process.env.POSTGRES_PORT || 5432
+const pgUser = process.env.POSTGRES_USER || "postgres"
+const pgPass = process.env.POSTGRES_PASSWORD || "postgres"
+const pgDb = process.env.POSTGRES_DB || "postgres"
+
+const connectionString =
+  process.env.DATABASE_URL ||
+  `postgres://${pgUser}:${pgPass}@${pgHost}:${pgPort}/${pgDb}`
+
 const pool = new pg.Pool({
-  connectionString: "postgres://postgres:postgres@localhost/postgres",
+  connectionString: connectionString,
 })
 
 async.retry(
@@ -33,20 +42,23 @@ async.retry(
       if (err) {
         console.error("Waiting for db")
       }
+      if (client) {
+        done()
+      }
       callback(err, client)
     })
   },
-  function (err, client) {
+  function (err) {
     if (err) {
       return console.error("Giving up")
     }
     console.log("Connected to db")
-    getVotes(client)
+    getVotes()
   },
 )
 
-function getVotes(client) {
-  client.query("SELECT vote, COUNT(id) AS count FROM votes GROUP BY vote", [], function (err, result) {
+function getVotes() {
+  pool.query("SELECT vote, COUNT(id) AS count FROM votes GROUP BY vote", [], function (err, result) {
     if (err) {
       console.error("Error performing query: " + err)
     } else {
@@ -55,7 +67,7 @@ function getVotes(client) {
     }
 
     setTimeout(function () {
-      getVotes(client)
+      getVotes()
     }, 1000)
   })
 }
@@ -71,7 +83,8 @@ function collectVotesFromResult(result) {
 }
 
 app.use(cookieParser())
-app.use(bodyParser())
+app.use(bodyParser.urlencoded({ extended: true }))
+app.use(bodyParser.json())
 app.use(methodOverride("X-HTTP-Method-Override"))
 app.use(function (req, res, next) {
   res.header("Access-Control-Allow-Origin", "*")
@@ -87,6 +100,6 @@ app.get("/", function (req, res) {
 })
 
 server.listen(port, function () {
-  const port = server.address().port
-  console.log("App running on port " + port)
+  const actualPort = server.address().port
+  console.log("App running on port " + actualPort)
 })

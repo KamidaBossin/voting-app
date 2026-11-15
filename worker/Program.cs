@@ -16,8 +16,20 @@ namespace Worker
         {
             try
             {
-                var pgsql = OpenDbConnection("Server=localhost;Username=postgres;Password=postgres;");
-                var redisConn = OpenRedisConnection("localhost");
+                string pgHost = Environment.GetEnvironmentVariable("POSTGRES_HOST") ?? "db";
+                string pgPort = Environment.GetEnvironmentVariable("POSTGRES_PORT") ?? "5432";
+                string pgUser = Environment.GetEnvironmentVariable("POSTGRES_USER") ?? "postgres";
+                string pgPass = Environment.GetEnvironmentVariable("POSTGRES_PASSWORD") ?? "postgres";
+                string pgDb = Environment.GetEnvironmentVariable("POSTGRES_DB") ?? "postgres";
+                string defaultConnectionString = $"Host={pgHost};Port={pgPort};Username={pgUser};Password={pgPass};Database={pgDb};";
+                string connectionString = Environment.GetEnvironmentVariable("DATABASE_URL") 
+                    ?? Environment.GetEnvironmentVariable("POSTGRES_CONNECTION_STRING") 
+                    ?? defaultConnectionString;
+
+                string redisHost = Environment.GetEnvironmentVariable("REDIS_HOST") ?? "redis";
+
+                var pgsql = OpenDbConnection(connectionString);
+                var redisConn = OpenRedisConnection(redisHost);
                 var redis = redisConn.GetDatabase();
 
                 var keepAliveCommand = pgsql.CreateCommand();
@@ -28,23 +40,25 @@ namespace Worker
                 {
                     Thread.Sleep(100);
 
-                    // Se reconnecter à Redis si la connexion est perdue
-                    if (redisConn == null || !redisConn.IsConnected) {
+                    // Se reconnecter a Redis si la connexion est perdue
+                    if (redisConn == null || !redisConn.IsConnected)
+                    {
                         Console.WriteLine("Reconnecting Redis");
-                        redisConn = OpenRedisConnection("localhost");
+                        redisConn = OpenRedisConnection(redisHost);
                         redis = redisConn.GetDatabase();
                     }
+
                     string json = redis.ListLeftPopAsync("votes").Result;
                     if (json != null)
                     {
                         var vote = JsonConvert.DeserializeAnonymousType(json, definition);
                         Console.WriteLine($"Processing vote for '{vote.vote}' by '{vote.voter_id}'");
 
-                        // Se reconnecter à PostgreSQL si la connexion est perdue
+                        // Se reconnecter a PostgreSQL si la connexion est perdue
                         if (!pgsql.State.Equals(System.Data.ConnectionState.Open))
                         {
                             Console.WriteLine("Reconnecting DB");
-                            pgsql = OpenDbConnection("Server=localhost;Username=postgres;Password=postgres;");
+                            pgsql = OpenDbConnection(connectionString);
                         }
                         else
                         {
@@ -102,18 +116,16 @@ namespace Worker
 
         private static ConnectionMultiplexer OpenRedisConnection(string hostname)
         {
-            // Use IP address to workaround https://github.com/StackExchange/StackExchange.Redis/issues/410
-            var ipAddress = GetIp(hostname);
-            Console.WriteLine($"Found redis at {ipAddress}");
-
             while (true)
             {
                 try
                 {
+                    var ipAddress = GetIp(hostname);
+                    Console.WriteLine($"Found redis at {ipAddress}");
                     Console.Error.WriteLine("Connecting to redis");
                     return ConnectionMultiplexer.Connect(ipAddress);
                 }
-                catch (RedisConnectionException)
+                catch (Exception ex) when (ex is RedisConnectionException || ex is SocketException || ex is AggregateException)
                 {
                     Console.Error.WriteLine("Waiting for redis");
                     Thread.Sleep(1000);
@@ -122,9 +134,8 @@ namespace Worker
         }
 
         private static string GetIp(string hostname)
-            => Dns.GetHostEntryAsync(hostname)
+            => Dns.GetHostAddressesAsync(hostname)
                 .Result
-                .AddressList
                 .First(a => a.AddressFamily == AddressFamily.InterNetwork)
                 .ToString();
 
