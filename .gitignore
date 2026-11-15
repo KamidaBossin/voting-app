@@ -12,3 +12,14 @@
 
 # Logs
 *.log
+
+# Environment variables
+.env
+
+# Dependencies & build outputs
+node_modules/
+bin/
+obj/
+project.lock.json
+__pycache__/
+*.pyc
