@@ -21,4 +21,6 @@ USER appuser
 
 COPY --from=build --chown=appuser:appuser /app/publish .
 
+EXPOSE 8081
+
 CMD ["dotnet", "Worker.dll"]
