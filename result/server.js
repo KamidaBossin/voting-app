@@ -27,6 +27,9 @@ const pgUser = process.env.POSTGRES_USER || "postgres"
 const pgPass = process.env.POSTGRES_PASSWORD || "postgres"
 const pgDb = process.env.POSTGRES_DB || "postgres"
 
+const labelA = process.env.OPTION_A || "Cats"
+const labelB = process.env.OPTION_B || "Dogs"
+
 const connectionString =
   process.env.DATABASE_URL ||
   `postgres://${pgUser}:${pgPass}@${pgHost}:${pgPort}/${pgDb}`
@@ -73,7 +76,7 @@ function getVotes() {
 }
 
 function collectVotesFromResult(result) {
-  const votes = {a: 0, b: 0}
+  const votes = {a: 0, b: 0, label_a: labelA, label_b: labelB}
 
   result.rows.forEach(function (row) {
     votes[row.vote] = parseInt(row.count)

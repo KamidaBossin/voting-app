@@ -7,6 +7,8 @@ const bg2 = document.getElementById("background-stats-2")
 app.controller("statsCtrl", function ($scope) {
   $scope.aPercent = 50
   $scope.bPercent = 50
+  $scope.labelA = "Cats"
+  $scope.labelB = "Dogs"
 
   const updateScores = function () {
     socket.on("scores", function (json) {
@@ -23,6 +25,8 @@ app.controller("statsCtrl", function ($scope) {
         $scope.aPercent = percentages.a
         $scope.bPercent = percentages.b
         $scope.total = a + b
+        $scope.labelA = data.label_a || "Cats"
+        $scope.labelB = data.label_b || "Dogs"
       })
     })
   }

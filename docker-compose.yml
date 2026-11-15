@@ -100,6 +100,8 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
       POSTGRES_DB: ${POSTGRES_DB:-postgres}
       PORT: 8888
+      OPTION_A: ${OPTION_A:-Cats}
+      OPTION_B: ${OPTION_B:-Dogs}
     networks:
       - back
     depends_on:
