@@ -88,7 +88,7 @@ Copier le fichier modele pour charger les variables d'environnement :
 cp .env.example .env
 ```
 
-Le fichier `.env` definit les ports d'ecoute, les identifiants PostgreSQL et le texte des deux options soumises au vote.
+Le fichier `.env` definit les ports d'ecoute, les identifiants PostgreSQL, le texte des deux options soumises au vote et la version des images a publier (`IMAGE_TAG`).
 
 ### Lancement de la stack
 
@@ -98,6 +98,8 @@ Pour compiler les images et demarrer l'ensemble des conteneurs en arriere-plan :
 make up
 # ou directement : docker compose up -d
 ```
+
+Les images sont etiquetees avec la version declaree dans `IMAGE_TAG` (fichier `.env`), soit `amidaemmanuelle/voting-vote:1.0`, `amidaemmanuelle/voting-worker:1.0` et `amidaemmanuelle/voting-result:1.0`. Les conteneurs sont reconstruits au premier lancement.
 
 ### Verification du statut et des sondes de sante
 
@@ -110,7 +112,19 @@ make ps
 # ou : docker compose ps
 ```
 
-La colonne `STATUS` doit afficher `Up ... (healthy)` pour `db`, `redis`, `vote` et `result`.
+La colonne `STATUS` doit afficher `Up ... (healthy)` pour les cinq services : `db`, `redis`, `vote`, `worker` et `result`.
+
+Le `worker` n'expose aucune interface de vote, il ecoute donc un point de sante dedie sur le port 8081. La reponse indique l'etat de ses deux connexions :
+
+```bash
+docker compose exec worker wget -qO- http://127.0.0.1:8081/health
+```
+
+```json
+{"worker":"up","redis":"ok","database":"ok"}
+```
+
+Pendant que la base est arretee, le point de sante renvoie un code `503` et le champ `database` passe a `ko`. Le worker se reconnecte tout seul, le vote en attente n'est pas perdu.
 
 ### Acces aux interfaces
 
@@ -150,8 +164,16 @@ Swarm ne construisant pas d'images au deploiement, celles-ci doivent etre preala
 docker compose build
 docker login
 make push
-# pousse kamidabossin/voting-vote, voting-worker et voting-result
+# pousse amidaemmanuelle/voting-vote, voting-worker et voting-result
 ```
+
+Le prefixe des depots correspond au compte Docker Hub du groupe. La version poussee est lue dans `IMAGE_TAG` (fichier `.env`), ce qui evite de deployer un tag `:latest` non fige. Les trois depots sont publics et referencent la version `1.0` :
+
+| Depot | Version | Taille sur le registre |
+|---|---|---|
+| `amidaemmanuelle/voting-vote` | 1.0 | 19,8 Mo |
+| `amidaemmanuelle/voting-worker` | 1.0 | 39,6 Mo |
+| `amidaemmanuelle/voting-result` | 1.0 | 67,1 Mo |
 
 ### B. Constitution d'un cluster a 3 noeuds (1 manager, 2 workers)
 
@@ -197,7 +219,13 @@ Si l'on dispose d'un hyperviseur (VirtualBox ou VMware), un fichier `Vagrantfile
 Sur le noeud manager (ou en local si le contexte pointe sur le cluster) :
 
 ```bash
-docker stack deploy -c docker-stack.yml voting
+make stack-deploy
+```
+
+Le descripteur fait reference a des variables (`${POSTGRES_USER}`, `${IMAGE_TAG}`...). La commande `docker stack deploy` ne sait pas lire le fichier `.env`, il faut donc exporter les variables avant le deploiement. C'est exactement ce que fait la cible `make stack-deploy` :
+
+```bash
+set -a; . ./.env; set +a; docker stack deploy -c docker-stack.yml voting
 ```
 
 Verification des services et de leurs repliques :
@@ -208,12 +236,12 @@ docker stack services voting
 
 Sortie attendue :
 ```
-ID             NAME            MODE         REPLICAS   IMAGE                               PORTS
-...            voting_db       replicated   1/1        postgres:17-alpine                  
-...            voting_redis    replicated   1/1        redis:8-alpine                      
-...            voting_result   replicated   2/2        kamidabossin/voting-result:latest   *:8888->8888/tcp
-...            voting_vote     replicated   2/2        kamidabossin/voting-vote:latest     *:8080->8080/tcp
-...            voting_worker   replicated   1/1        kamidabossin/voting-worker:latest   
+ID             NAME            MODE         REPLICAS   IMAGE                                PORTS
+...            voting_db       replicated   1/1        postgres:17-alpine
+...            voting_redis    replicated   1/1        redis:8-alpine
+...            voting_result   replicated   2/2        amidaemmanuelle/voting-result:1.0    *:8888->8888/tcp
+...            voting_vote     replicated   2/2        amidaemmanuelle/voting-vote:1.0      *:8080->8080/tcp
+...            voting_worker   replicated   1/1        amidaemmanuelle/voting-worker:1.0
 ```
 
 Affichage de la repartition des taches sur les noeuds :
@@ -251,13 +279,30 @@ Conformement aux consignes du sujet, les modifications ont ete effectuees de man
 | `worker/Worker.csproj` | Migration du runtime cible vers `net8.0` et actualisation des bibliotheques (`Npgsql` 8.0.3, `StackExchange.Redis` 2.8.0). | .NET Core 7 n'est plus maintenu depuis mai 2024. Le passage a la version LTS 8.0 assure le support de securite. |
 | `result/server.js` | Lecture de `PORT` et de la chaine de connexion PostgreSQL via `DATABASE_URL` / `POSTGRES_*`. | Permet de connecter l'application au service `db` du reseau Docker au lieu de cibler un `localhost` inaccessible. |
 | `result/server.js` | Remplacement de la connexion par client fige par `pool.query`. | Si la base de donnees redemarre, les requetes suivantes acquierent une nouvelle connexion saine depuis le pool au lieu d'accumuler des erreurs fatales. |
+| `worker/Program.cs` | Suppression de la commande `keepAliveCommand` creee une seule fois au demarrage. | Une commande SQL appartient a la connexion qui l'a creee. Apres une reconnexion, elle pointait sur l'ancienne connexion fermee et levait une exception `57P01` qui arretait le processus. La commande est desormais recreee a chaque appel. |
+| `worker/Program.cs` | Ajout d'un point de sante HTTP `/health` sur le port 8081, servi par un thread de fond. | Le worker n'a pas d'interface web. Ce point de sante permet au conteneur de disposer d'une sonde reelle et indique au superviseur l'etat des connexions Redis et PostgreSQL. Le thread est protege par un try/catch : une panne de la sonde ne peut pas tuer le worker. |
+| `worker/Program.cs` | Remise en file du vote depile lorsque la connexion PostgreSQL doit etre renouvalee. | Le vote poppe depuis Redis etait perdu si la base etait indisponible. Il est desormais repousse en fin de file avec `RPUSH` puis traite des la reprise de la base. |
+| `worker/Program.cs` | Reconnexion automatique sur erreur de connexion et protection de l'appel `LPOP` par un try/catch. | Avant, une coupure de Redis ou de PostgreSQL suffisait a terminer le conteneur avec le code 1. Le worker absorbe l'incident, journalise l'erreur et attend la reprise du service. |
+| `worker/Dockerfile` | Ajout de la directive `EXPOSE 8081`. | Le port de sante est documente dans l'image, comme les ports applicatifs des deux autres services. |
+| `result/server.js`, `result/views/` | Les libelles des deux options sont lus dans `OPTION_A` et `OPTION_B` puis transmis au client. | Les libelles etaient figes dans la page de resultats alors que la page de vote les prenait dans l'environnement. Les deux ecrans lisent desormais les memes variables. |
+| `docker-compose.yml`, `docker-stack.yml` | Images versionnees (`amidaemmanuelle/voting-*:1.0`) au lieu du tag `:latest`. | Le tag `:latest` est flottant et rend le deploiement Swarm irreproductible : le cluster peut tirer une image differente de celle qui a ete testee en local. |
+| `docker-compose.yml` | Ajout d'une sonde de sante sur le service `worker`. | Les cinq services de la stack disposent maintenant d'un controle de disponibilite exploitable par `docker compose ps`. |
+| `Makefile` | Ajout de la variable `IMAGE_TAG` et export du fichier `.env` dans la cible `stack-deploy`. | `docker stack deploy` n'a pas d'option `--env-file` et n'interpole rien depuis `.env`. Les variables doivent etre exportees dans l'environnement avant la commande, sinon la stack repart sur les valeurs par defaut. |
 
 ---
 
 ## 7. Justification des choix de conteneurisation
 
 ### Optimisation des images et build multi-etapes
-Le module `worker` (.NET) fait appel a un Dockerfile multi-stage. L'etape de compilation s'appuie sur le SDK volumineux (~750 Mo) pour restaurer les dependances et publier les binaires. L'image finale ne conserve que le runtime Alpine et le dossier de publication, descendant la taille finale a 39,6 Mo.
+Le module `worker` (.NET) fait appel a un Dockerfile multi-stage. L'etape de compilation s'appuie sur le SDK volumineux (~750 Mo) pour restaurer les dependances et publier les binaires. L'image finale ne conserve que le runtime Alpine et le dossier de publication.
+
+| Image | Sur le disque local | Telechargee (compressee) |
+|---|---|---|
+| `voting-vote` | 83 Mo | 19,8 Mo |
+| `voting-worker` | 128 Mo | 39,6 Mo |
+| `voting-result` | 269 Mo | 67,1 Mo |
+
+`docker image ls` affiche deux colonnes de taille : la premiere correspond a l'espace occupe sur le disque local, la seconde a ce qui transite reellement lors d'un `docker pull`. C'est la seconde qui pese sur la bande passante du cluster.
 
 ### Securite et principe du moindre privilege
 Aucun service applicatif ne s'execute sous l'utilisateur `root` :
@@ -272,3 +317,9 @@ Les healthchecks utilisent les outils deja presents dans chaque image :
 - PostgreSQL : `pg_isready` teste reellement l'acceptation des connexions SQL.
 - Redis : `redis-cli ping` valide la reponse du moteur memoire.
 - Applications web : requetes directes executees par l'interpreteur (Python `urllib` et Node `fetch`) pour eviter d'installer un binaire externe comme `curl` dans des images Alpine minimales.
+- Worker : appel a `/health` sur le port 8081, resolu avec le `wget` de BusyBox deja installe dans l'image Alpine du runtime .NET.
+
+Le point de sante du worker va plus loin qu'un simple test de processus vivant : il publie l'etat de ses connexions. Un worker isole de sa base passe en `unhealthy` alors que le processus tourne toujours.
+
+### Redemarrage de la base de donnees
+Quand PostgreSQL s'arrete puis redemarre, le worker survit. Il detecte la coupure, remet en file le vote qu'il venait de depiler, attend la reprise de la base et reprend son traitement comme si de rien n'etait. La sonde `/health` repasse en `503` pendant la coupure puis redevient verte, sans intervention de l'operateur.
