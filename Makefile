@@ -1,5 +1,5 @@
-# Version des images publiees sur Docker Hub.
-# Source de verite : la variable IMAGE_TAG du fichier .env.
+# Version des images publiées sur Docker Hub.
+# Source de vérité : la variable IMAGE_TAG du fichier .env.
 IMAGE_TAG ?= $(or $(shell sed -n 's/^IMAGE_TAG=//p' .env 2>/dev/null | head -n 1),1.0)
 
 .PHONY: help build up down down-v logs ps test-vote push stack-deploy stack-rm stack-ps stack-services
@@ -7,17 +7,17 @@ IMAGE_TAG ?= $(or $(shell sed -n 's/^IMAGE_TAG=//p' .env 2>/dev/null | head -n 1
 help:
 	@echo "Commandes disponibles :"
 	@echo "  make build          Construire les images Docker de l'application"
-	@echo "  make up             Demarrer la stack Compose locale en arriere-plan"
-	@echo "  make down           Arreter la stack Compose (conserve les volumes)"
-	@echo "  make down-v         Arreter la stack Compose et supprimer les volumes"
+	@echo "  make up             Démarrer la stack Compose locale en arrière-plan"
+	@echo "  make down           Arrêter la stack Compose (conserve les volumes)"
+	@echo "  make down-v         Arrêter la stack Compose et supprimer les volumes"
 	@echo "  make logs           Suivre les journaux de l'ensemble des services"
-	@echo "  make ps             Afficher l'etat des conteneurs et de leurs sondes"
+	@echo "  make ps             Afficher l'état des conteneurs et de leurs sondes"
 	@echo "  make test-vote      Envoyer un vote de test (Cats) via curl"
-	@echo "  make push           Publier les images versionnees sur Docker Hub"
-	@echo "  make stack-deploy   Deployer la stack sur le cluster Docker Swarm"
+	@echo "  make push           Publier les images versionnées sur Docker Hub"
+	@echo "  make stack-deploy   Déployer la stack sur le cluster Docker Swarm"
 	@echo "  make stack-rm       Supprimer la stack du cluster Docker Swarm"
-	@echo "  make stack-ps       Lister les taches Swarm et leur repartition"
-	@echo "  make stack-services Afficher l'etat des services Swarm et leurs repliques"
+	@echo "  make stack-ps       Lister les tâches Swarm et leur répartition"
+	@echo "  make stack-services Afficher l'état des services Swarm et leurs répliques"
 	@echo ""
 	@echo "Version des images : $(IMAGE_TAG)"
 
@@ -40,7 +40,7 @@ ps:
 	docker compose ps
 
 test-vote:
-	curl -s -X POST -d "vote=a" http://localhost:8080/ > /dev/null && echo "Vote 'a' enregistre."
+	curl -s -X POST -d "vote=a" http://localhost:8080/ > /dev/null && echo "Vote 'a' enregistré."
 
 push:
 	docker push amidaemmanuelle/voting-vote:$(IMAGE_TAG)
