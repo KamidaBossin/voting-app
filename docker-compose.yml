@@ -36,7 +36,7 @@ services:
     build:
       context: ./vote
       dockerfile: Dockerfile
-    image: kamidabossin/voting-vote:latest
+    image: amidaemmanuelle/voting-vote:${IMAGE_TAG:-1.0}
     ports:
       - "${VOTE_PORT:-8080}:8080"
     environment:
@@ -61,7 +61,7 @@ services:
     build:
       context: ./worker
       dockerfile: Dockerfile
-    image: kamidabossin/voting-worker:latest
+    image: amidaemmanuelle/voting-worker:${IMAGE_TAG:-1.0}
     environment:
       REDIS_HOST: redis
       POSTGRES_HOST: db
@@ -90,7 +90,7 @@ services:
     build:
       context: ./result
       dockerfile: Dockerfile
-    image: kamidabossin/voting-result:latest
+    image: amidaemmanuelle/voting-result:${IMAGE_TAG:-1.0}
     ports:
       - "${RESULT_PORT:-8888}:8888"
     environment:

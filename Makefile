@@ -1,3 +1,7 @@
+# Version des images publiees sur Docker Hub.
+# Source de verite : la variable IMAGE_TAG du fichier .env.
+IMAGE_TAG ?= $(or $(shell sed -n 's/^IMAGE_TAG=//p' .env 2>/dev/null | head -n 1),1.0)
+
 .PHONY: help build up down down-v logs ps test-vote push stack-deploy stack-rm stack-ps stack-services
 
 help:
@@ -9,11 +13,13 @@ help:
 	@echo "  make logs           Suivre les journaux de l'ensemble des services"
 	@echo "  make ps             Afficher l'etat des conteneurs et de leurs sondes"
 	@echo "  make test-vote      Envoyer un vote de test (Cats) via curl"
-	@echo "  make push           Publier les images sur le registre Docker Hub"
+	@echo "  make push           Publier les images versionnees sur Docker Hub"
 	@echo "  make stack-deploy   Deployer la stack sur le cluster Docker Swarm"
 	@echo "  make stack-rm       Supprimer la stack du cluster Docker Swarm"
 	@echo "  make stack-ps       Lister les taches Swarm et leur repartition"
 	@echo "  make stack-services Afficher l'etat des services Swarm et leurs repliques"
+	@echo ""
+	@echo "Version des images : $(IMAGE_TAG)"
 
 build:
 	docker compose build
@@ -37,9 +43,9 @@ test-vote:
 	curl -s -X POST -d "vote=a" http://localhost:8080/ > /dev/null && echo "Vote 'a' enregistre."
 
 push:
-	docker push kamidabossin/voting-vote:latest
-	docker push kamidabossin/voting-worker:latest
-	docker push kamidabossin/voting-result:latest
+	docker push amidaemmanuelle/voting-vote:$(IMAGE_TAG)
+	docker push amidaemmanuelle/voting-worker:$(IMAGE_TAG)
+	docker push amidaemmanuelle/voting-result:$(IMAGE_TAG)
 
 stack-deploy:
 	docker stack deploy -c docker-stack.yml voting
