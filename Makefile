@@ -48,7 +48,7 @@ push:
 	docker push amidaemmanuelle/voting-result:$(IMAGE_TAG)
 
 stack-deploy:
-	docker stack deploy -c docker-stack.yml voting
+	@set -a; [ -f ./.env ] && . ./.env; set +a; docker stack deploy -c docker-stack.yml voting
 
 stack-rm:
 	docker stack rm voting
